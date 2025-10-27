@@ -1,116 +1,132 @@
-# Security Guidelines for codeguide-starter
+# EPOP Platform Security Guidelines
 
-This document defines mandatory security principles and implementation best practices tailored to the **codeguide-starter** repository. It aligns with Security-by-Design, Least Privilege, Defense-in-Depth, and other core security tenets. All sections reference specific areas of the codebase (e.g., `/app/api/auth/route.ts`, CSS files, environment configuration) to ensure practical guidance.
+This document outlines mandatory security controls and best practices for the Enterprise Platform for Operational Performance (EPOP). It aligns with core security principles and addresses the specific architecture, technologies, and workflows of your Next.js 15 + TypeScript + Drizzle ORM + PostgreSQL + Redis + MinIO codebase.
 
 ---
 
-## 1. Security by Design
+## 1. Core Security Principles
 
-• Embed security from day one: review threat models whenever adding new features (e.g., new API routes, data fetching).
-• Apply “secure defaults” in Next.js configuration (`next.config.js`), enabling strict mode and disabling debug flags in production builds.
-• Maintain a security checklist in your PR template to confirm that each change has been reviewed against this guideline.
+1. **Security by Design**: Embed security at every phase—design, development, testing, and deployment.  
+2. **Least Privilege**: Grant only the permissions needed to perform a function (e.g., database roles, API scopes).  
+3. **Defense in Depth**: Layer controls—network, application, data—to mitigate failure of any single control.  
+4. **Fail Securely**: On errors or timeouts, default to denying access; avoid exposing stack traces or PII.  
+5. **Secure Defaults**: Enable the most restrictive settings out of the box (e.g., require HTTPS, HTTP-only cookies).
 
 ---
 
 ## 2. Authentication & Access Control
 
-### 2.1 Password Storage
-- Use **bcrypt** (or Argon2) with a per-user salt to hash passwords in `/app/api/auth/route.ts`.
-- Enforce a strong password policy on both client and server: minimum 12 characters, mixed case, numbers, and symbols.
+### 2.1 JWT & Session Management
+- Use **RS256** or **HS256** with a strong secret/ key pair; never allow `alg: none`.  
+- Enforce short-lived access tokens (< 15 min) and long-lived refresh tokens stored in **httpOnly**, **Secure**, **SameSite=Strict** cookies.  
+- Validate token claims (`iss`, `aud`, `exp`, `nbf`) on every request.  
+- Implement **silent-refresh** endpoint under strict rate limiting to avoid token replay.
 
-### 2.2 Session Management
-- Issue sessions via Secure, HttpOnly, SameSite=strict cookies. Do **not** expose tokens to JavaScript.
-- Implement absolute and idle timeouts. For example, invalidate sessions after 30 minutes of inactivity.
-- Protect against session fixation by regenerating session IDs after authentication.
+### 2.2 Password Policies & Hashing
+- Enforce minimum length (12+ chars), complexity, and prohibit blacklisted passwords.  
+- Hash with **Argon2id** or **bcrypt** w/ unique per-user salt.  
+- Never store plaintext or reversible-encrypted passwords.
 
-### 2.3 Brute-Force & Rate Limiting
-- Apply rate limiting at the API layer (e.g., using `express-rate-limit` or Next.js middleware) on `/api/auth` to throttle repeated login attempts.
-- Introduce exponential backoff or temporary lockout after N failed attempts.
+### 2.3 Role-Based Access Control (RBAC)
+- Define roles (e.g., `user`, `manager`, `admin`) and assign granular permissions.  
+- Enforce server-side authorization in middleware for `/app/api/**` and Next.js page handlers.  
+- Validate each action against the user’s roles and resource ownership.
 
-### 2.4 Role-Based Access Control (Future)
-- Define user roles in your database model (e.g., `role = 'user' | 'admin'`).
-- Enforce server-side authorization checks in every protected route (e.g., in `dashboard/layout.tsx` loader functions).
-
----
-
-## 3. Input Handling & Processing
-
-### 3.1 Validate & Sanitize All Inputs
-- On **client** (`sign-up/page.tsx`, `sign-in/page.tsx`): perform basic format checks (email regex, password length).
-- On **server** (`/app/api/auth/route.ts`): re-validate inputs with a schema validator (e.g., `zod`, `Joi`).
-- Reject or sanitize any unexpected fields to prevent injection attacks.
-
-### 3.2 Prevent Injection
-- If you introduce a database later, always use parameterized queries or an ORM (e.g., Prisma) rather than string concatenation.
-- Avoid dynamic `eval()` or template rendering with unsanitized user input.
-
-### 3.3 Safe Redirects
-- When redirecting after login or logout, validate the target against an allow-list to prevent open redirects.
+### 2.4 Multi-Factor Authentication (MFA)
+- Offer TOTP (e.g., Google Authenticator) or SMS-based OTP as an additional verification step.  
+- Store second-factor secrets encrypted at rest and require re-authentication for high-risk operations.
 
 ---
 
-## 4. Data Protection & Privacy
+## 3. Input Handling & Data Validation
 
-### 4.1 Encryption & Secrets
-- Enforce HTTPS/TLS 1.2+ for all front-end ↔ back-end communications.
-- Never commit secrets—use environment variables and a secrets manager (e.g., AWS Secrets Manager, Vault).
-
-### 4.2 Sensitive Data Handling
-- Do ​not​ log raw passwords, tokens, or PII in server logs. Mask or redact any user identifiers.
-- If storing PII in `data.json` or a future database, classify it and apply data retention policies.
-
----
-
-## 5. API & Service Security
-
-### 5.1 HTTPS Enforcement
-- In production, redirect all HTTP traffic to HTTPS (e.g., via Vercel’s redirect rules or custom middleware).
-
-### 5.2 CORS
-- Configure `next.config.js` or API middleware to allow **only** your front-end origin (e.g., `https://your-domain.com`).
-
-### 5.3 API Versioning & Minimal Exposure
-- Version your API routes (e.g., `/api/v1/auth`) to handle future changes without breaking clients.
-- Return only necessary fields in JSON responses; avoid leaking internal server paths or stack traces.
+- Validate **all** inputs server-side using **zod** schemas: API body, query, and path parameters.  
+- Sanitize user-generated content displayed in the UI: use React’s built-in XSS protections plus a custom sanitizer (e.g., `DOMPurify`) for rich-text input.  
+- Use parameterized Drizzle queries or prepared statements to prevent SQL injection.  
+- Validate file uploads:
+  - Restrict by MIME type and file extension.  
+  - Enforce maximum file size limits (configurable).  
+  - Normalize filenames; disallow path-traversal sequences.
 
 ---
 
-## 6. Web Application Security Hygiene
+## 4. API & Service Security
 
-### 6.1 CSRF Protection
-- Use anti-CSRF tokens for any state-changing API calls. Integrate Next.js CSRF middleware or implement synchronizer tokens stored in cookies.
-
-### 6.2 Security Headers
-- In `next.config.js` (or a custom server), add these headers:
-  - `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
-  - `X-Content-Type-Options: nosniff`
-  - `X-Frame-Options: DENY`
-  - `Referrer-Policy: no-referrer-when-downgrade`
-  - `Content-Security-Policy`: restrict script/style/src to self and trusted CDNs.
-
-### 6.3 Secure Cookies
-- Set `Secure`, `HttpOnly`, `SameSite=Strict` on all cookies. Avoid storing sensitive data in `localStorage`.
-
-### 6.4 Prevent XSS
-- Escape or encode all user-supplied data in React templates. Avoid `dangerouslySetInnerHTML` unless content is sanitized.
+- **Enforce HTTPS**: All API routes (`/api/*`) must require TLS 1.2+. Redirect HTTP to HTTPS.  
+- **Rate Limiting & Throttling**: Apply per-IP and per-user limits on endpoints like `/auth/login`, `/auth/refresh`, and `/files/presign-upload`.  
+- **CORS**: Restrict allowed origins to the official frontend domains; enable `Access-Control-Allow-Credentials` only as needed.  
+- **Versioning**: Prefix endpoints (`/v1/projects`) to manage changes without breaking clients.  
+- **Least Response Data**: Return only requested fields; avoid leaking internal IDs, file paths, or stack traces.
 
 ---
 
-## 7. Infrastructure & Configuration Management
+## 5. Real-Time Messaging Layer
 
-- Harden your hosting environment (e.g., Vercel/Netlify) by disabling unnecessary endpoints (GraphQL/GraphiQL playgrounds in production).
-- Rotate secrets and API keys regularly via your secrets manager.
-- Maintain minimal privileges: e.g., database accounts should only have read/write on required tables.
-- Keep Node.js, Next.js, and all system packages up to date.
-
----
-
-## 8. Dependency Management
-
-- Commit and maintain `package-lock.json` to guarantee reproducible builds.
-- Integrate a vulnerability scanner (e.g., GitHub Dependabot, Snyk) to monitor and alert on CVEs in dependencies.
-- Trim unused packages; each added library increases the attack surface.
+- **Socket.IO Authentication**: Require a valid access token during handshake; reject unauthorized connections.  
+- **Redis Adapter**: Secure Redis with ACLs and strong credentials; isolate pub/sub database.  
+- **Event Authorization**: Validate each incoming event (e.g., `sendMessage`, `joinRoom`) against user’s permissions.  
+- **Rate Limiting**: Throttle message sends per socket to prevent spamming or denial-of-service.
 
 ---
 
-Adherence to these guidelines will ensure that **codeguide-starter** remains secure, maintainable, and resilient as it evolves. Regularly review and update this document to reflect new threats and best practices.
+## 6. File Storage & MinIO Integration
+
+- **Presigned URLs**: Generate short-lived, one-time-use URLs via `POST /api/files/presign-upload`.  
+- **Access Policies**: Use MinIO buckets with least-privilege policies (e.g., separate buckets per user or project).  
+- **Virus/Malware Scanning**: Integrate a scanning service (e.g., ClamAV) in the upload pipeline.  
+- **Metadata Validation**: Store and verify content-type and size after upload; reject mismatches.
+
+---
+
+## 7. Data Protection & Privacy
+
+- **At Rest Encryption**: Encrypt PostgreSQL data volumes (e.g., LUKS or managed RDS encryption).  
+- **In Transit Encryption**: Enforce TLS for client–server, server–database, and server–MinIO connections.  
+- **Secrets Management**: Do NOT commit secrets. Use Vault, AWS Secrets Manager, or environment variables protected by CI/CD.  
+- **PII Handling**: Mask or redact PII in logs. Implement GDPR/CCPA compliant data deletion workflows.
+
+---
+
+## 8. Infrastructure & Deployment
+
+- **Docker Hardening**:
+  - Run containers as non-root users.  
+  - Avoid unnecessary privileges (e.g., disable `--privileged`).  
+- **Network Segmentation**: Place the database, Redis, and MinIO in a private network; only Next.js app can access them.  
+- **TLS Configuration**: Use strong cipher suites; disable TLS 1.0/1.1.  
+- **CI/CD Pipeline**:
+  - Scan images for vulnerabilities.  
+  - Deploy only from tagged commits.  
+  - Rotate deploy keys regularly.
+- **Disable Debug Endpoints** in production; ensure stack traces are off.
+
+---
+
+## 9. Dependency & Supply-Chain Security
+
+- **Lockfiles**: Commit `package-lock.json` or `yarn.lock` for deterministic builds.  
+- **Vulnerability Scanning**: Integrate SCA tools (e.g., Snyk, Dependabot) to detect CVEs in direct and transitive dependencies.  
+- **Minimal Footprint**: Audit installed packages; remove unused modules.  
+- **Regular Updates**: Schedule monthly dependency reviews and patching.
+
+---
+
+## 10. Monitoring, Logging & Incident Response
+
+- **Centralized Logging**: Ship structured logs (JSON) with request IDs; redact sensitive fields.  
+- **Metrics & Alerts**: Track auth failures, rate-limit blocks, error rates, CPU/memory; set up alerts for anomalies.  
+- **Audit Trails**: Log admin-actions, file-downloads, and permission changes.  
+- **Incident Playbook**: Define processes for breach detection, containment, and notification.
+
+---
+
+## 11. Developer Best Practices
+
+- **Code Reviews**: Enforce security checklists in PR reviews: input validation, error handling, auth checks.  
+- **Pair with QA**: Include security test cases in your test suite (unit, integration, Playwright).  
+- **Secure Coding Training**: Regularly train teams on OWASP Top 10, dependency management, and new threat vectors.  
+- **Documentation**: Keep this guideline and environment variable inventory up to date.
+
+---
+
+Adhering to these guidelines will ensure the EPOP platform is built with a robust, layered security posture—protecting your data, your users, and your enterprise reputation.

@@ -1,14 +1,24 @@
 flowchart TD
-  Start[Landing Page]
-  SignUpPage[Sign Up Page]
-  SignInPage[Sign In Page]
-  AuthAPI[Authentication API Endpoint]
-  DashboardPage[Dashboard Page]
-  Start -->|Select Sign Up| SignUpPage
-  Start -->|Select Sign In| SignInPage
-  SignUpPage -->|Submit Credentials| AuthAPI
-  SignInPage -->|Submit Credentials| AuthAPI
-  AuthAPI -->|Success| DashboardPage
-  AuthAPI -->|Error| SignUpPage
-  AuthAPI -->|Error| SignInPage
-  DashboardPage -->|Click Logout| Start
+  A[User Requests Sign up/in] --> B[Auth Server Validates Credentials]
+  B --> C{Valid Credentials?}
+  C -->|Yes| D[Generate JWT Tokens]
+  C -->|No| E[Show Auth Error]
+  D --> F[Set HTTP only Refresh Cookie]
+  F --> G[Redirect to Dashboard]
+  G --> H[Dashboard Home]
+  H --> I[Select Messaging]
+  H --> J[Select Projects]
+  H --> K[Select Directory]
+  I --> L[Connect via SocketIO]
+  L --> M[Fetch Conversations]
+  M --> N[Open Conversation]
+  N --> O[Send Message]
+  O --> P[Request Presign URL]
+  P --> Q[Upload to MinIO]
+  Q --> R[Save File Metadata]
+  R --> S[Broadcast Message via SocketIO]
+  J --> T[Fetch Projects List]
+  T --> U[Open Project Detail]
+  U --> V[Manage Tasks and Members]
+  K --> W[Fetch Directory Tree]
+  W --> X[View Member Profile]
