@@ -5,6 +5,7 @@ import { db } from '@/db';
 import { users } from '@/db/schema';
 import { PasswordService } from '@/lib/auth/password';
 import { withCors, withRateLimit } from '@/lib/auth/middleware';
+import { createEmailService } from '@/lib/email/resend-provider';
 
 // Validation schema
 const requestResetSchema = z.object({
@@ -19,37 +20,60 @@ const handler = withCors(
                 const body = await req.json();
                 const { email } = requestResetSchema.parse(body);
 
-                // Generate password reset token
-                // Note: This will throw an error if user doesn't exist, but for security
-                // we might want to always return success to prevent user enumeration
+                // Generate password reset token and send email
                 try {
-                    const resetToken = await PasswordService.generatePasswordResetToken(email);
+                    const ipAddress = req.headers.get('x-forwarded-for') || req.ip || 'unknown';
+                    const userAgent = req.headers.get('user-agent') || 'unknown';
 
-                    // TODO: Send email with reset token
-                    // For now, we'll just return the token in development
-                    const isDevelopment = process.env.NODE_ENV !== 'production';
+                    const resetToken = await PasswordService.generatePasswordResetToken(
+                        email,
+                        ipAddress,
+                        userAgent
+                    );
 
-                    if (isDevelopment) {
-                        // In development, return the reset token for testing
-                        const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/reset-password?token=${resetToken}`;
+                    // Create password reset URL
+                    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/reset-password?token=${resetToken}`;
 
-                        console.log('Password reset link (development only):', resetUrl);
+                    // Get user details for email
+                    const [user] = await db
+                        .select({
+                            name: users.name,
+                            email: users.email,
+                        })
+                        .from(users)
+                        .where(eq(users.email, email))
+                        .limit(1);
 
-                        return NextResponse.json({
-                            message: 'Password reset link sent to your email',
-                            // Only in development
-                            ...(isDevelopment && {
-                                resetToken,
-                                resetUrl
-                            })
+                    if (user) {
+                        // Send password reset email
+                        const emailService = createEmailService();
+                        const emailResult = await emailService.sendPasswordResetEmail(email, {
+                            userName: user.name,
+                            resetUrl,
+                            expiryHours: 1,
                         });
+
+                        if (!emailResult.success) {
+                            console.error('Failed to send password reset email:', emailResult.error);
+
+                            // In production, we might want to queue this for retry
+                            // For now, we'll still return success to prevent user enumeration
+                        }
                     }
 
-                    // In production, you would send an email here
-                    // await sendPasswordResetEmail(email, resetToken);
+                    const isDevelopment = process.env.NODE_ENV !== 'production';
 
                     return NextResponse.json({
-                        message: 'Password reset link sent to your email'
+                        message: 'Password reset link sent to your email',
+                        // Only in development for testing
+                        ...(isDevelopment && {
+                            resetToken,
+                            resetUrl,
+                            debugInfo: {
+                                userName: user?.name,
+                                email: user?.email,
+                            }
+                        })
                     });
 
                 } catch (error) {

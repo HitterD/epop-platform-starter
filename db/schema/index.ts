@@ -12,6 +12,7 @@ import {
     users,
     fcmTokens,
     refreshTokens,
+    passwordResetTokens,
     auditLogs,
 } from './auth';
 import {
@@ -52,6 +53,7 @@ import {
 export const usersRelations = relations(users, ({ many }) => ({
     fcmTokens: many(fcmTokens),
     refreshTokens: many(refreshTokens),
+    passwordResetTokens: many(passwordResetTokens),
     auditLogsAsActor: many(auditLogs),
     divisionMemberships: many(divisionMembers),
     conversationMemberships: many(conversationMembers),
@@ -80,6 +82,13 @@ export const fcmTokensRelations = relations(fcmTokens, ({ one }) => ({
 export const refreshTokensRelations = relations(refreshTokens, ({ one }) => ({
     user: one(users, {
         fields: [refreshTokens.userId],
+        references: [users.id],
+    }),
+}));
+
+export const passwordResetTokensRelations = relations(passwordResetTokens, ({ one }) => ({
+    user: one(users, {
+        fields: [passwordResetTokens.userId],
         references: [users.id],
     }),
 }));
