@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import * as crypto from 'crypto';
 import { eq, and, lt } from 'drizzle-orm';
 import { db } from '@/db';
 import { users, refreshTokens, auditLogs } from '@/db/schema';
@@ -7,6 +8,21 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-producti
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-change-in-production';
 const JWT_EXPIRES_IN = '15m'; // Access token expires in 15 minutes
 const JWT_REFRESH_EXPIRES_IN = '7d'; // Refresh token expires in 7 days
+
+/**
+ * Hash a token for secure storage
+ */
+function hashToken(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/**
+ * Verify a token against its hash
+ */
+function verifyTokenHash(token: string, hash: string): boolean {
+    const tokenHash = hashToken(token);
+    return crypto.timingSafeEqual(Buffer.from(tokenHash), Buffer.from(hash));
+}
 
 export interface JWTPayload {
     userId: string;
@@ -115,13 +131,15 @@ export class JWTService {
 
         const refreshToken = this.generateRefreshToken();
 
-        // Store refresh token in database
+        // Store refresh token in database with hash
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
+        const refreshTokenHash = hashToken(refreshToken);
 
         await db.insert(refreshTokens).values({
             userId: user.id,
-            token: refreshToken,
+            token: refreshToken, // Keep original token for response
+            tokenHash: refreshTokenHash, // Store hash for verification
             deviceFingerprint,
             expiresAt,
             ipAddress,
@@ -164,13 +182,14 @@ export class JWTService {
             throw new Error('Invalid or expired refresh token');
         }
 
-        // Find the refresh token in database
+        // Find the refresh token in database using hash verification
+        const refreshTokenHash = hashToken(refreshToken);
         const [tokenRecord] = await db
             .select()
             .from(refreshTokens)
             .where(
                 and(
-                    eq(refreshTokens.token, refreshToken),
+                    eq(refreshTokens.tokenHash, refreshTokenHash),
                     eq(refreshTokens.isActive, true)
                 )
             )
@@ -228,14 +247,15 @@ export class JWTService {
      * Revoke a refresh token
      */
     static async revokeRefreshToken(token: string, userId?: string): Promise<void> {
+        const tokenHash = hashToken(token);
         const query = db
             .update(refreshTokens)
             .set({ isActive: false })
-            .where(eq(refreshTokens.token, token));
+            .where(eq(refreshTokens.tokenHash, tokenHash));
 
         if (userId) {
             query.where(and(
-                eq(refreshTokens.token, token),
+                eq(refreshTokens.tokenHash, tokenHash),
                 eq(refreshTokens.userId, userId)
             ));
         }

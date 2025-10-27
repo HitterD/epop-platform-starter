@@ -58,6 +58,7 @@ export const refreshTokens = pgTable("refresh_tokens", {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     token: text("token").notNull().unique(),
+    tokenHash: text("token_hash").notNull().unique(), // Hashed version for security
     deviceFingerprint: text("device_fingerprint"),
     expiresAt: timestamp("expires_at").notNull(),
     isActive: boolean("is_active").notNull().default(true),
@@ -68,7 +69,27 @@ export const refreshTokens = pgTable("refresh_tokens", {
 }, (table) => ({
     userIdIdx: index("refresh_tokens_user_id_idx").on(table.userId),
     tokenIdx: index("refresh_tokens_token_idx").on(table.token),
+    tokenHashIdx: index("refresh_tokens_token_hash_idx").on(table.tokenHash),
     expiresAtIdx: index("refresh_tokens_expires_at_idx").on(table.expiresAt),
+}));
+
+// Password reset tokens
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    token: text("token").notNull().unique(),
+    tokenHash: text("token_hash").notNull().unique(), // Hashed version for security
+    expiresAt: timestamp("expires_at").notNull(),
+    isUsed: boolean("is_used").notNull().default(false),
+    usedAt: timestamp("used_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+}, (table) => ({
+    userIdIdx: index("password_reset_tokens_user_id_idx").on(table.userId),
+    tokenIdx: index("password_reset_tokens_token_idx").on(table.token),
+    tokenHashIdx: index("password_reset_tokens_token_hash_idx").on(table.tokenHash),
+    expiresAtIdx: index("password_reset_tokens_expires_at_idx").on(table.expiresAt),
 }));
 
 // Audit logging for security

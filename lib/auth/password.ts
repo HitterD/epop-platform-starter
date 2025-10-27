@@ -1,10 +1,24 @@
 import * as crypto from 'crypto';
-import { eq } from 'drizzle-orm';
+import { eq, and, lt } from 'drizzle-orm';
 import { db } from '@/db';
-import { users, auditLogs } from '@/db/schema';
+import { users, auditLogs, passwordResetTokens } from '@/db/schema';
 
 // Configuration for password hashing
 const SALT_ROUNDS = 12;
+
+/**
+ * Hash a token for secure storage
+ */
+function hashToken(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/**
+ * Generate a cryptographically secure random token
+ */
+function generateSecureToken(): string {
+    return crypto.randomBytes(32).toString('hex');
+}
 
 export class PasswordService {
     /**
@@ -233,50 +247,79 @@ export class PasswordService {
         ipAddress?: string,
         userAgent?: string
     ): Promise<void> {
-        // Find user with valid reset token
-        const [user] = await db
+        // Find valid reset token record
+        const resetTokenHash = hashToken(resetToken);
+        const [tokenRecord] = await db
             .select({
-                id: users.id,
-                passwordResetToken: users.passwordResetToken,
-                passwordResetExpires: users.passwordResetExpires,
+                id: passwordResetTokens.id,
+                userId: passwordResetTokens.userId,
+                expiresAt: passwordResetTokens.expiresAt,
+                isUsed: passwordResetTokens.isUsed,
             })
-            .from(users)
+            .from(passwordResetTokens)
             .where(
-                eq(users.passwordResetToken, resetToken)
+                and(
+                    eq(passwordResetTokens.tokenHash, resetTokenHash),
+                    eq(passwordResetTokens.isUsed, false)
+                )
             )
             .limit(1);
 
-        if (!user) {
+        if (!tokenRecord) {
             throw new Error('Invalid or expired reset token');
         }
 
         // Check if token has expired
-        if (!user.passwordResetExpires || user.passwordResetExpires < new Date()) {
+        if (tokenRecord.expiresAt < new Date()) {
             throw new Error('Reset token has expired');
+        }
+
+        // Get user details
+        const [user] = await db
+            .select({
+                id: users.id,
+                email: users.email,
+            })
+            .from(users)
+            .where(eq(users.id, tokenRecord.userId))
+            .limit(1);
+
+        if (!user) {
+            throw new Error('User not found');
         }
 
         // Hash new password
         const newPasswordHash = await this.hashPassword(newPassword);
 
-        // Update password and clear reset token
+        // Update password
         await db
             .update(users)
             .set({
                 passwordHash: newPasswordHash,
-                passwordResetToken: null,
-                passwordResetExpires: null,
                 failedLoginAttempts: 0,
                 lockedUntil: null,
                 updatedAt: new Date(),
             })
             .where(eq(users.id, user.id));
 
+        // Mark token as used
+        await db
+            .update(passwordResetTokens)
+            .set({
+                isUsed: true,
+                usedAt: new Date(),
+            })
+            .where(eq(passwordResetTokens.id, tokenRecord.id));
+
         // Log password reset
         await db.insert(auditLogs).values({
             actorId: user.id,
             action: 'PASSWORD_RESET',
             targetResource: 'user',
-            metadata: {},
+            targetId: user.id,
+            metadata: {
+                tokenId: tokenRecord.id,
+            },
             ipAddress,
             userAgent,
             success: true,
@@ -290,7 +333,11 @@ export class PasswordService {
     /**
      * Generate password reset token
      */
-    static async generatePasswordResetToken(email: string): Promise<string> {
+    static async generatePasswordResetToken(
+        email: string,
+        ipAddress?: string,
+        userAgent?: string
+    ): Promise<string> {
         const [user] = await db
             .select({
                 id: users.id,
@@ -304,29 +351,33 @@ export class PasswordService {
             throw new Error('User with this email does not exist');
         }
 
-        // Generate random token
-        const token = Buffer.from(crypto.randomUUID()).toString('base64');
+        // Generate secure token
+        const token = generateSecureToken();
+        const tokenHash = hashToken(token);
         const expiresAt = new Date();
         expiresAt.setHours(expiresAt.getHours() + 1); // Token expires in 1 hour
 
-        // Update user with reset token
-        await db
-            .update(users)
-            .set({
-                passwordResetToken: token,
-                passwordResetExpires: expiresAt,
-                updatedAt: new Date(),
-            })
-            .where(eq(users.id, user.id));
+        // Insert new password reset token
+        await db.insert(passwordResetTokens).values({
+            userId: user.id,
+            token, // Keep original for return
+            tokenHash, // Store hash for verification
+            expiresAt,
+            ipAddress,
+            userAgent,
+        });
 
         // Log token generation
         await db.insert(auditLogs).values({
             actorId: user.id,
             action: 'PASSWORD_RESET_REQUESTED',
             targetResource: 'user',
+            targetId: user.id,
             metadata: {
                 email: user.email,
             },
+            ipAddress,
+            userAgent,
             success: true,
         });
 
