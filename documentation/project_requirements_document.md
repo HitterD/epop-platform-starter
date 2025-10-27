@@ -1,117 +1,100 @@
-# Project Requirements Document: codeguide-starter
-
----
+# Project Requirements Document (PRD)
 
 ## 1. Project Overview
 
-The **codeguide-starter** project is a boilerplate web application that provides a ready-made foundation for any web project requiring secure user authentication and a post-login dashboard. It sets up the common building blocks—sign-up and sign-in pages, API routes to handle registration and login, and a simple dashboard interface driven by static data. By delivering this skeleton, it accelerates development time and ensures best practices are in place from day one.
+The **Enterprise Platform for Operational Performance (EPOP)** is a modern web application designed to bring together real-time messaging, project management, and scheduling into a single, unified interface. Its goal is to eliminate fragmented workflows and scattered communication tools by offering a secure, extensible dashboard where teams can chat, track projects, and view calendars all in one place.
 
-This starter kit is being built to solve the friction developers face when setting up repeated common tasks: credential handling, session management, page routing, and theming. Key objectives include: 1) delivering a fully working authentication flow (registration & login), 2) providing a gated dashboard area upon successful login, 3) establishing a clear, maintainable project structure using Next.js and TypeScript, and 4) demonstrating a clean theming approach with global and section-specific CSS. Success is measured by having an end-to-end login journey in under 200 lines of code and zero runtime type errors.
+Built on a pre-configured full-stack foundation, EPOP accelerates development by handling user authentication, data persistence, theming, and deployment readiness out of the box. Your team can immediately focus on adding unique business logic—such as custom project workflows, advanced metrics, and AI-powered assistance—rather than setting up boilerplate infrastructure.
 
----
+**Key Objectives & Success Criteria**
+- Enable users to sign up, log in, and access a protected dashboard within seconds.
+- Provide real-time chat and presence indicators for seamless team communication.
+- Offer a basic Kanban project board and a viewable calendar in version 1.
+- Support secure file attachments and downloads via an S3-compatible service.
+- Maintain page load times under 300ms for core screens.
 
 ## 2. In-Scope vs. Out-of-Scope
 
 ### In-Scope (Version 1)
-- User registration (sign-up) form with validation
-- User login (sign-in) form with validation
-- Next.js API routes under `/api/auth/route.ts` handling:
-  - Credential validation
-  - Password hashing (e.g., bcrypt)
-  - Session creation or JWT issuance
-- Protected dashboard pages under `/dashboard`:
-  - `layout.tsx` wrapping dashboard content
-  - `page.tsx` rendering static data from `data.json`
-- Global application layout in `/app/layout.tsx`
-- Basic styling via `globals.css` and `dashboard/theme.css`
-- TypeScript strict mode enabled
+- JWT-based user authentication (sign-up, login, logout, password reset via email).
+- Protected dashboard with sidebar (Inbox, Projects, Directory) and top bar (Search, User Menu).
+- Real-time messaging with typing indicators, read receipts, and user presence.
+- Project management module: simple Kanban board for creating, moving, and deleting tasks.
+- Scheduling module: basic calendar view showing events.
+- Directory panel listing all organization members and roles.
+- File storage integration using MinIO (presigned URL uploads and downloads).
+- Dark mode theming toggle.
+- Docker Compose setup for local development (Next.js, PostgreSQL, Redis, MinIO).
+- Core API endpoints (CRUD for users, projects, conversations, calendar events).
 
-### Out-of-Scope (Later Phases)
-- Integration with a real database (PostgreSQL, MongoDB, etc.)
-- Advanced authentication flows (password reset, email verification, MFA)
-- Role-based access control (RBAC)
-- Multi-tenant or white-label theming
-- Unit, integration, or end-to-end testing suites
-- CI/CD pipeline and production deployment scripts
-
----
+### Out-of-Scope (Version 1)
+- Mobile app or React Native client.
+- Advanced analytics dashboards and KPI widgets beyond placeholders.
+- Full-text search across conversations and tasks.
+- Gantt charts or complex project timelines.
+- Push notifications via FCM (Firebase Cloud Messaging).
+- Role-based access control beyond a basic admin/user split.
+- Background job processing (email digests, scheduled reminders).
+- AI Assistant integrations (e.g., message drafting) beyond placeholder hooks.
 
 ## 3. User Flow
 
-A new visitor lands on the root URL and sees a welcome page with options to **Sign Up** or **Sign In**. If they choose Sign Up, they fill in their email, password, and hit “Create Account.” The form submits to `/api/auth/route.ts`, which hashes the password, creates a new user session or token, and redirects them to the dashboard. If any input is invalid, an inline error message explains the issue (e.g., “Password too short”).
+A **new user** visits the landing page and signs up with an email address and password. After verifying the email (via a link sent automatically), they log in and receive a JWT access token stored in memory and a refresh token in a secure, HTTP-only cookie. Once authenticated, they are redirected to the main dashboard.
 
-Once authenticated, the user is taken to the `/dashboard` route. Here they see a sidebar or header defined by `dashboard/layout.tsx`, and the main panel pulls in static data from `data.json`. They can log out (if that control is present), but otherwise their entire session is managed by server-side cookies or tokens. Returning users go directly to Sign In, submit credentials, and upon success they land back on `/dashboard`. Any unauthorized access to `/dashboard` redirects back to Sign In.
-
----
+On the **dashboard**, the user sees a left sidebar with navigation links (Inbox for chats, Projects for Kanban boards, Directory for team members). The top bar offers a global search field and a user menu (with logout and profile settings). Selecting **Inbox** loads recent conversations and opens the chat view. Selecting **Projects** shows the Kanban board. Selecting **Calendar** (or a calendar widget on the home page) displays scheduled events. Users can upload attachments, which fetch a presigned URL from the server and upload directly to MinIO.
 
 ## 4. Core Features
 
-- **Sign-Up Page (`/app/sign-up/page.tsx`)**: Form fields for email & password, client-side validation, POST to `/api/auth`.
-- **Sign-In Page (`/app/sign-in/page.tsx`)**: Form fields for email & password, client-side validation, POST to `/api/auth`.
-- **Authentication API (`/app/api/auth/route.ts`)**: Handles both registration and login based on HTTP method, integrates password hashing (bcrypt) and session or JWT logic.
-- **Global Layout (`/app/layout.tsx` + `globals.css`)**: Shared header, footer, and CSS resets across all pages.
-- **Dashboard Layout (`/app/dashboard/layout.tsx` + `dashboard/theme.css`)**: Sidebar or top nav for authenticated flows, section-specific styling.
-- **Dashboard Page (`/app/dashboard/page.tsx`)**: Reads `data.json`, renders it as cards or tables.
-- **Static Data Source (`/app/dashboard/data.json`)**: Example dataset to demo dynamic rendering.
-- **TypeScript Configuration**: `tsconfig.json` with strict mode and path aliases (if any).
-
----
+- **Authentication**: Sign-up, login, logout, password reset. Implements access and refresh JWT tokens.
+- **Protected Dashboard**: Pages and API routes guarded by authentication middleware.
+- **Real-Time Messaging**: Socket.IO-powered chat with presence, typing indicators, and read receipts.
+- **Project Management**: Kanban board component supporting task creation, editing, drag-and-drop, and deletion.
+- **Scheduling / Calendar**: Calendar view showing events fetched from the backend. Create, edit, and delete events.
+- **Organization Directory**: Tree or list view of all members, showing names, roles, and online status.
+- **File Attachments**: File upload via presigned URLs to MinIO and metadata stored in the database.
+- **Theming**: Light/dark mode toggle persisted per user.
+- **API Layer**: RESTful endpoints for all core entities (users, conversations, projects, events).
 
 ## 5. Tech Stack & Tools
 
-- **Framework**: Next.js (App Router) for file-based routing, SSR/SSG, and API routes.
-- **Language**: TypeScript for type safety.
-- **UI Library**: React 18 for component-based UI.
-- **Styling**: Plain CSS via `globals.css` (global reset) and `theme.css` (sectional styling). Can easily migrate to CSS Modules or Tailwind in the future.
-- **Backend**: Node.js runtime provided by Next.js API routes.
-- **Password Hashing**: bcrypt (npm package).
-- **Session/JWT**: NextAuth.js or custom JWT logic (to be decided in implementation).
-- **IDE & Dev Tools**: VS Code with ESLint, Prettier extensions. Optionally, Cursor.ai for AI-assisted coding.
-
----
+- **Frontend**: Next.js 15 (App Router), React, TypeScript, Tailwind CSS, shadcn/ui component library.
+- **Backend**: Next.js API routes, Node.js, TypeScript.
+- **Database & ORM**: PostgreSQL, Drizzle ORM (type-safe SQL builder).
+- **Real-Time**: Socket.IO server with Redis adapter for pub/sub and presence tracking.
+- **File Storage**: MinIO (S3-compatible), accessed via server-generated presigned URLs.
+- **Authentication**: JSON Web Tokens (JWT) for access/refresh flows, Argon2id for password hashing.
+- **Containerization**: Docker Compose (Next.js, PostgreSQL, Redis, MinIO).
+- **Deployment**: Vercel for frontend and API hosting; environment variables via `.env`.
+- **Validation & State**: Zod for input validation; Zustand or Jotai for client-side global state (optional).
 
 ## 6. Non-Functional Requirements
 
-- **Performance**: Initial page load under 200 ms on a standard broadband connection. API responses under 300 ms.
-- **Security**:
-  - HTTPS only in production.
-  - Proper CORS, CSRF protection for API routes.
-  - Secure password storage (bcrypt with salt).
-  - No credentials or secrets checked into version control.
-- **Scalability**: Structure must support adding database integration, caching layers, and advanced auth flows without rewiring core app.
-- **Usability**: Forms should give real-time feedback on invalid input. Layout must be responsive (mobile > 320 px).
-- **Maintainability**: Code must adhere to TypeScript strict mode. Linting & formatting enforced by ESLint/Prettier.
-
----
+- **Performance**: Core pages should render server-side within 200ms and hydrate in under 100ms on a 3G connection.
+- **Scalability**: Socket.IO setup must support horizontal scaling using the Redis adapter.
+- **Security**: 
+  - All API routes require JWT validation.
+  - Refresh tokens stored in HTTP-only cookies.
+  - Passwords hashed with Argon2id.
+  - File uploads restricted by size and MIME type.
+- **Reliability**: Dockerized local environment mirrors production to prevent "works on my machine" issues.
+- **Usability & Accessibility**: Follow WCAG 2.1 AA standards (keyboard navigation, ARIA labels).
+- **Compliance**: GDPR-ready data handling (user consent, right to be forgotten).
 
 ## 7. Constraints & Assumptions
 
-- **No Database**: Dashboard uses only `data.json`; real database integration is deferred.
-- **Node Version**: Requires Node.js >= 14.
-- **Next.js Version**: Built on Next.js 13+ App Router.
-- **Authentication**: Assumes availability of bcrypt or NextAuth.js at implementation time.
-- **Hosting**: Targets serverless or Node.js-capable hosting (e.g., Vercel, Netlify).
-- **Browser Support**: Modern evergreen browsers; no IE11 support required.
-
----
+- **Node.js >= 18.x** is required for Next.js 15 and Drizzle ORM.
+- **Redis** and **MinIO** services must be available (locally via Docker Compose or in a cloud environment).
+- **Vercel** is the preferred hosting platform; serverless function cold starts should be minimized.
+- Assumes users have modern browsers supporting ES2020 and WebSocket.
+- Users will have stable internet; offline support is not required in v1.
 
 ## 8. Known Issues & Potential Pitfalls
 
-- **Static Data Limitation**: `data.json` is only for demo. A real API or database will be needed to avoid stale data.
-  *Mitigation*: Define a clear interface for data fetching so swapping to a live endpoint is trivial.
-
-- **Global CSS Conflicts**: Using global styles can lead to unintended overrides.
-  *Mitigation*: Plan to migrate to CSS Modules or utility-first CSS in Phase 2.
-
-- **API Route Ambiguity**: Single `/api/auth/route.ts` handling both sign-up and sign-in could get complex.
-  *Mitigation*: Clearly branch on HTTP method (`POST /register` vs. `POST /login`) or split into separate files.
-
-- **Lack of Testing**: No test suite means regressions can slip in.
-  *Mitigation*: Build a minimal Jest + React Testing Library setup in an early iteration.
-
-- **Error Handling Gaps**: Client and server must handle edge cases (network failures, malformed input).
-  *Mitigation*: Define a standard error response schema and show user-friendly messages.
+- **Socket.IO Rate Limits**: Rapid reconnections can trigger rate limiting on serverless hosts. Mitigation: implement exponential backoff and sticky sessions if needed.
+- **JWT Expiry & Refresh Races**: Simultaneous API calls when the access token expires can lead to multiple refresh attempts. Mitigation: serialize refresh calls on the client.
+- **File Upload Errors**: Presigned URLs can expire or be misconfigured. Mitigation: validate URL generation logic and handle 403 errors gracefully.
+- **Database Migrations**: Schema drift between environments can cause errors. Mitigation: use a migration tool and run migrations automatically on deploy.
+- **State Inconsistency**: Real-time updates vs. REST fetches can conflict. Mitigation: centralize state in a store (Zustand) and apply optimistic updates with rollback.
 
 ---
-
-This PRD should serve as the single source of truth for the AI model or any developer generating the next set of technical documents: Tech Stack Doc, Frontend Guidelines, Backend Structure, App Flow, File Structure, and IDE Rules. It contains all functional and non-functional requirements with no ambiguity, enabling seamless downstream development.
+**This PRD serves as the single source of truth for the EPOP project.** Next steps (Tech Stack Document, Frontend Guidelines, Backend Structure) can be derived directly from this specification without missing details.
